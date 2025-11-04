@@ -1,30 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Document</title>
     <style>
-        .pin {
-            width: 10px;
-            height: 10px;
-            border: 1px solid rgba(0, 0, 0, .1);
-            border-radius: 50%;
-            box-shadow: 0 1px 2px 0px rgba(0, 0, 0, .1);
-            box-sizing: border-box;
-        }
+      .pin {
+        width: 10px;
+        height: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 50%;
+        box-shadow: 0 1px 2px 0px rgba(0, 0, 0, 0.1);
+        box-sizing: border-box;
+      }
     </style>
-</head>
+  </head>
 
-<body>
-
+  <body>
     <div class="loginform">
-        <input type="text" name="username" id="username">
-        <input type="password" name="password" id="password">
-        <input type="submit" value="login" id="login">
+      <input type="text" name="username" id="username" />
+      <input type="password" name="password" id="password" />
+      <input type="submit" value="login" id="login" />
     </div>
 
+    <p>username: {{ . }}</p>
     <a href="" id="refresh_token">refresh_token</a>
 
     <div id="restricted_page"></div>
@@ -32,115 +31,121 @@
 
     <div class="pin"></div>
     <br />
-    <input id="t" type="text">
+    <input id="t" type="text" />
     <button onclick="send()">invia</button>
 
     <ul></ul>
 
     <script>
-        // restricted_page
-        document.querySelector("#load").addEventListener("click", async e => {
-            const req = await fetch("http://localhost:8000/api/restricted_page", {
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer " + localStorage.getItem("token")
-                },
-                method: "get",
-            })
-            if (req.ok) {
-                const data = await req.json()
-                console.log(data)
-                const { message } = data
-                const div = document.querySelector("#restricted_page").textContent = message
-            }
-        })
-
-        // refresh
-        const refresh = document.querySelector("#refresh_token").addEventListener("click", async e => {
-            e.preventDefault()
-            const req = await fetch("http://localhost:8000/api/refresh", {
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                method: "get",
-            })
-            if (req.ok) {
-                const data = await req.json()
-                console.log(data)
-                localStorage.setItem("token", data.token)
-            }
-        })
-
-        // login
-        const login = document.querySelector("#login")
-        const username = document.querySelector("#username")
-        const password = document.querySelector("#password")
-        login.addEventListener("click", async (e) => {
-            e.preventDefault()
-            if (username.value !== "" && password.value !== "") {
-                // send request
-                const req = await fetch("http://localhost:8000/login", {
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    method: "post",
-                    body: JSON.stringify({
-                        username: username.value,
-                        password: password.value
-                    })
-                })
-                if (req.ok) {
-                    const data = await req.json()
-                    console.log(data)
-                    const { token } = data
-                    localStorage.setItem("token", token)
-                }
-            }
-        })
-
-        // endlogin
-
-        const eventType = {
-            Join: 0,
-            Leave: 1,
-            Message: 2,
-            Latency: 3,
+      // restricted_page
+      document.querySelector("#load").addEventListener("click", async (e) => {
+        const req = await fetch("http://localhost:8000/api/restricted_page", {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + localStorage.getItem("token"),
+          },
+          method: "get",
+        });
+        if (req.ok) {
+          const data = await req.json();
+          console.log(data);
+          const { message } = data;
+          const div = (document.querySelector("#restricted_page").textContent =
+            message);
         }
-        let ws = new WebSocket("http://localhost:8000/ws")
-        ws.onopen = () => {
-            console.log("open")
-            fetch("http://127.0.0.1:8000/chat/123").then(r => r.json()).then(json => {
-                console.log(json)
-                ws.send(JSON.stringify({
-                    eventType: eventType.Join,
-                    message: "123"
-                }))
-            })
-        }
-        ws.onmessage = (msg) => {
-            // console.log(msg)
-            let data = JSON.parse(msg.data)
-            if (data.eventType == eventType.Message) {
-                let child = document.createElement("li")
-                child.textContent = data.message
-                document.querySelector("ul").appendChild(child)
-            } else if (data.eventType == eventType.Latency) {
-                console.log("latency: " + data.message)
-                document.querySelector("div.pin").style.backgroundColor = data.message
-            }
-        }
-        ws.onclose = () => console.log("close")
+      });
 
-        function send() {
-            let t = document.querySelector("#t").value
-            let data = JSON.stringify({
-                eventType: eventType.Message,
-                message: t
-            })
-            ws.send(data)
-        }
+      // refresh
+      const refresh = document
+        .querySelector("#refresh_token")
+        .addEventListener("click", async (e) => {
+          e.preventDefault();
+          const req = await fetch("http://localhost:8000/api/refresh", {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            method: "get",
+          });
+          if (req.ok) {
+            const data = await req.json();
+            console.log(data);
+            localStorage.setItem("token", data.token);
+          }
+        });
 
+      // login
+      const login = document.querySelector("#login");
+      const username = document.querySelector("#username");
+      const password = document.querySelector("#password");
+      login.addEventListener("click", async (e) => {
+        e.preventDefault();
+        if (username.value !== "" && password.value !== "") {
+          // send request
+          const req = await fetch("http://localhost:8000/login", {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            method: "post",
+            body: JSON.stringify({
+              username: username.value,
+              password: password.value,
+            }),
+          });
+          if (req.ok) {
+            const data = await req.json();
+            console.log(data);
+            const { token } = data;
+            localStorage.setItem("token", token);
+          }
+        }
+      });
+
+      // endlogin
+
+      const eventType = {
+        Join: 0,
+        Leave: 1,
+        Message: 2,
+        Latency: 3,
+      };
+      let ws = new WebSocket("http://localhost:8000/ws");
+      ws.onopen = () => {
+        console.log("open");
+        fetch("http://127.0.0.1:8000/chat/123")
+          .then((r) => r.json())
+          .then((json) => {
+            console.log(json);
+            ws.send(
+              JSON.stringify({
+                eventType: eventType.Join,
+                message: "123",
+              })
+            );
+          });
+      };
+      ws.onmessage = (msg) => {
+        // console.log(msg)
+        let data = JSON.parse(msg.data);
+        if (data.eventType == eventType.Message) {
+          let child = document.createElement("li");
+          child.textContent = data.message;
+          document.querySelector("ul").appendChild(child);
+        } else if (data.eventType == eventType.Latency) {
+          console.log("latency: " + data.message);
+          document.querySelector("div.pin").style.backgroundColor =
+            data.message;
+        }
+      };
+      ws.onclose = () => console.log("close");
+
+      function send() {
+        let t = document.querySelector("#t").value;
+        let data = JSON.stringify({
+          eventType: eventType.Message,
+          message: t,
+        });
+        ws.send(data);
+      }
     </script>
-</body>
-
+  </body>
 </html>

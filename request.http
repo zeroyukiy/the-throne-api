@@ -1,10 +1,10 @@
-# POST http://localhost:8000/login
-# Content-Type: application/json
+POST http://localhost:8000/login
+Content-Type: application/json
 
-# {
-#     "username": "pippo",
-#     "password": "abcd1234"
-# }
+{
+    "username": "pippo",
+    "password": "abcd1234"
+}
 
 # eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiUGlwcG8gTmVybyIsImFkbWluIjp0cnVlLCJpc3MiOiJsb2NhbGhvc3QiLCJzdWIiOiJhZG1pbiIsImV4cCI6MTc2MTU3NzY2N30.Yz6JWadFHgbU-II0efT7LZyz4Jg2koaN7pdZ14FeToA
 
@@ -14,7 +14,7 @@
 
 
 
-GET http://localhost:8000/api/refresh
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiUGlwcG8gTmVybyIsImFkbWluIjp0cnVlLCJpc3MiOiJsb2NhbGhvc3QiLCJzdWIiOiJhZG1pbiIsImV4cCI6MTc2MTU3NzY2N30.Yz6JWadFHgbU-II0efT7LZyz4Jg2koaN7pdZ14FeToA
+# GET http://localhost:8000/api/refresh
+# Content-Type: application/json
+# Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiUGlwcG8gTmVybyIsImFkbWluIjp0cnVlLCJpc3MiOiJsb2NhbGhvc3QiLCJzdWIiOiJhZG1pbiIsImV4cCI6MTc2MTU3NzY2N30.Yz6JWadFHgbU-II0efT7LZyz4Jg2koaN7pdZ14FeToA
 

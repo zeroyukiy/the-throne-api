@@ -50,3 +50,11 @@ func (h *Hub) RegisterClient(client *Client) {
 func (h *Hub) UnregisterClient(client *Client) {
 	h.unregisterClient <- client
 }
+
+func (h *Hub) Broadcast(client *Client, b []byte) {
+	for client, ok := range h.clients {
+		if ok {
+			client.send <- b
+		}
+	}
+}

@@ -28,23 +28,26 @@ const (
 )
 
 type Data struct {
-	EventType EventType `json:"eventType"`
+	EventType EventType `json:"event_type"`
+	Username  string    `json:"username"`
 	Message   string    `json:"message"`
 }
 
 type Client struct {
-	conn    *websocket.Conn
-	send    chan []byte
-	hub     *Hub
-	latency time.Time
-	mu      sync.RWMutex
+	conn     *websocket.Conn
+	send     chan []byte
+	hub      *Hub
+	latency  time.Time
+	mu       sync.RWMutex
+	username string
 }
 
-func NewClient(conn *websocket.Conn, hub *Hub) *Client {
+func NewClient(conn *websocket.Conn, hub *Hub, username string) *Client {
 	return &Client{
-		conn: conn,
-		hub:  hub,
-		send: make(chan []byte),
+		conn:     conn,
+		hub:      hub,
+		send:     make(chan []byte),
+		username: username,
 	}
 }
 
@@ -87,12 +90,18 @@ func (c *Client) fromWebsocketToHub() {
 		}
 		switch data.EventType {
 		case Message:
+			data.Username = c.username
 			fmt.Println("data: ", data)
 			b, err := json.Marshal(data)
 			if err != nil {
 				fmt.Println(err)
 			}
-			c.hub.broadcast <- b
+			// c.hub.broadcast <- b
+			c.hub.Broadcast(c, b)
+		case Join:
+			fmt.Println("user", c.username, "joined room: ", data.Message)
+		case Leave:
+			fmt.Println("user", c.username, "left room")
 		}
 	}
 }

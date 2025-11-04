@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
-	"github.com/zeroyukiy/aot/internal"
+	"github.com/zeroyukiy/the-throne-api/internal"
 )
 
 type ChatHandler struct {
