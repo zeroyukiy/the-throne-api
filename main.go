@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/sessions"
 	"github.com/gorilla/websocket"
@@ -28,8 +29,16 @@ var upgrader = websocket.Upgrader{
 
 func cors(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		c.Response().Header().Set("Access-Control-Allow-Origin", "*")
-		c.Response().Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		// c.Response().Header().Set("Access-Control-Allow-Origin", "*")
+		c.Response().Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		c.Response().Header().Set("Access-Control-Allow-Headers", "origin, content-type, accept")
+		c.Response().Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Response().Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if c.Request().Method == "OPTIONS" {
+			return c.JSON(http.StatusOK, nil)
+		}
+
 		return next(c)
 	}
 }
@@ -44,6 +53,10 @@ func auth(next echo.HandlerFunc) echo.HandlerFunc {
 			return c.JSON(http.StatusUnauthorized, nil)
 		}
 		sess.Save(c.Request(), c.Response())
+		user := &User{
+			Name: sess.Values["username"].(string),
+		}
+		c.Set("user", user)
 		return next(c)
 	}
 }
@@ -75,12 +88,10 @@ func login(c echo.Context) error {
 		fmt.Println(err)
 	}
 
-	sess.Options.HttpOnly = true
-	sess.Options.SameSite = http.SameSiteLaxMode
-
 	sess.Values["user_id"] = 1
 	sess.Values["is_auth"] = true
 	sess.Values["username"] = login.Username
+	sess.Values["avatar"] = "http://localhost:8000/assets/avatars/pippo.jpg"
 
 	sess.Save(c.Request(), c.Response())
 
@@ -243,9 +254,14 @@ func main() {
 	e.Use(cors)
 	sessionStore := sessions.NewFilesystemStore("./sessions", []byte("hello"))
 	sessionStore.MaxAge(3600) // expires after 1 hr
+	sessionStore.Options.HttpOnly = true
+	// sessionStore.Options.SameSite = http.SameSiteLaxMode
+	sessionStore.Options.SameSite = http.SameSiteNoneMode
+	// sessionStore.Options.SameSite = http.SameSiteLaxMode
+	sessionStore.Options.Secure = true
 	e.Use(session.Middleware(sessionStore))
 
-	e.Static("/assets/avatars", "./faceset")
+	e.Static("/assets", "./public")
 	e.GET("/", func(c echo.Context) error {
 		sess, err := session.Get("user", c)
 		if err != nil {
@@ -260,7 +276,7 @@ func main() {
 		return t.ExecuteTemplate(c.Response(), "index.html", sess.Values["username"])
 	})
 
-	e.POST("/login", login)
+	e.POST("/api/login", login)
 
 	r := e.Group("/api")
 	{
@@ -339,12 +355,101 @@ func main() {
 		}
 
 		// create a client
-		client := internal.NewClient(conn, hub, sess.Values["username"].(string))
+		client := internal.NewClient(conn, hub, sess.Values["username"].(string), sess.Values["avatar"].(string))
 		hub.RegisterClient(client)
 		client.Run()
 
 		return nil
 	})
+
+	type Message struct {
+		Username  string `json:"username"`
+		Avatar    string `json:"avatar"`
+		Message   string `json:"message"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	var messages []*Message = []*Message{
+		{
+			Username:  "John Snow Prime",
+			Avatar:    "",
+			Message:   "Sed ligula tellus, dignissim non urna sed, commodo ullamcorper lorem. Cras ac scelerisque mauris. Aliquam metus neque, fringilla a ligula id, auctor tempus nulla. Donec euismod libero quis felis eleifend blandit pharetra in libero. Aenean interdum ultrices lorem, eu interdum velit convallis eu.",
+			CreatedAt: time.Now().Format("15:04"),
+		},
+	}
+
+	type ChatRoomBinding struct {
+		Id string `param:"chat_id"`
+	}
+
+	e.GET("/api/messages/:chat_id", func(c echo.Context) error {
+		chat_room := &ChatRoomBinding{}
+		err := c.Bind(chat_room)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+		return c.JSON(http.StatusOK, messages)
+	})
+
+	type MessageBinding struct {
+		Message string `json:"message"`
+	}
+
+	e.POST("/api/message", auth(func(c echo.Context) error {
+		sess, err := session.Get("user", c)
+		if err != nil {
+			fmt.Println(err)
+			return c.JSON(http.StatusUnauthorized, nil)
+		}
+
+		message := &MessageBinding{}
+		err = c.Bind(message)
+		if err != nil {
+			fmt.Println(err)
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+
+		msg := &Message{
+			Username:  sess.Values["username"].(string),
+			Avatar:    sess.Values["avatar"].(string),
+			Message:   message.Message,
+			CreatedAt: time.Now().Format("15:04"),
+		}
+
+		messages = append(messages, msg)
+		return c.JSON(http.StatusOK, nil)
+	}))
+
+	e.GET("/api/me", auth(func(c echo.Context) error {
+		// sess, err := session.Get("user", c)
+		// if err != nil {
+		// 	fmt.Println(err)
+		// 	return c.JSON(http.StatusUnauthorized, "not authorizated.")
+		// }
+
+		// if sess.Values["username"] != nil {
+
+		// }
+
+		user := c.Get("user").(*User)
+		fmt.Println("session from context: ", user)
+
+		return c.JSON(http.StatusOK, user)
+	}))
+
+	e.POST("/api/auth/logout", auth(func(c echo.Context) error {
+		sess, _ := session.Get("user", c)
+		sess.Values = nil
+		sess.Save(c.Request(), c.Response())
+
+		c.SetCookie(&http.Cookie{
+			Name:   "user",
+			Value:  "",
+			MaxAge: -1,
+		})
+
+		return c.JSON(http.StatusOK, nil)
+	}))
 
 	e.Logger.Fatal(e.Start("localhost:8000"))
 }

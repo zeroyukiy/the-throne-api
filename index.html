@@ -81,7 +81,7 @@
         e.preventDefault();
         if (username.value !== "" && password.value !== "") {
           // send request
-          const req = await fetch("http://localhost:8000/login", {
+          const req = await fetch("http://localhost:8000/api/login", {
             headers: {
               "Content-Type": "application/json",
             },

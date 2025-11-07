@@ -27,10 +27,17 @@ const (
 	Awful   LatencyQuality = "#B71C1C"
 )
 
-type Data struct {
+type DataRequest struct {
+	EventType EventType `json:"event_type"`
+	Message   string    `json:"message"`
+}
+
+type DataResponse struct {
 	EventType EventType `json:"event_type"`
 	Username  string    `json:"username"`
+	Avatar    string    `json:"avatar"`
 	Message   string    `json:"message"`
+	CreatedAt string    `json:"created_at"`
 }
 
 type Client struct {
@@ -40,14 +47,16 @@ type Client struct {
 	latency  time.Time
 	mu       sync.RWMutex
 	username string
+	avatar   string
 }
 
-func NewClient(conn *websocket.Conn, hub *Hub, username string) *Client {
+func NewClient(conn *websocket.Conn, hub *Hub, username string, avatar string) *Client {
 	return &Client{
 		conn:     conn,
 		hub:      hub,
 		send:     make(chan []byte),
 		username: username,
+		avatar:   avatar,
 	}
 }
 
@@ -67,7 +76,7 @@ func (c *Client) fromWebsocketToHub() {
 	c.conn.SetPongHandler(func(appData string) error {
 		// fmt.Println("received a pong from the client")
 		latency_status := LatencyStatus(c.latency)
-		latency := &Data{
+		latency := &DataRequest{
 			EventType: Latency,
 			// Message:   fmt.Sprintf("%.1fms", float32(time.Since(c.latency).Microseconds())/1000),
 			Message: string(latency_status),
@@ -77,7 +86,7 @@ func (c *Client) fromWebsocketToHub() {
 		return nil
 	})
 
-	var data *Data
+	var data *DataRequest
 	for {
 		// _, msg, err := c.conn.ReadMessage()
 		err := c.conn.ReadJSON(&data)
@@ -90,9 +99,15 @@ func (c *Client) fromWebsocketToHub() {
 		}
 		switch data.EventType {
 		case Message:
-			data.Username = c.username
 			fmt.Println("data: ", data)
-			b, err := json.Marshal(data)
+			data_response := &DataResponse{
+				EventType: data.EventType,
+				Username:  c.username,
+				Avatar:    c.avatar,
+				Message:   data.Message,
+				CreatedAt: time.Now().Format("15:04"),
+			}
+			b, err := json.Marshal(data_response)
 			if err != nil {
 				fmt.Println(err)
 			}
