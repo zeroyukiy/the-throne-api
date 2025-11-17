@@ -86,8 +86,8 @@ func (c *Client) fromWebsocketToHub() {
 		return nil
 	})
 
-	var data *DataRequest
 	for {
+		var data *DataRequest
 		// _, msg, err := c.conn.ReadMessage()
 		err := c.conn.ReadJSON(&data)
 		if err != nil {
@@ -97,6 +97,7 @@ func (c *Client) fromWebsocketToHub() {
 			fmt.Println(err)
 			break
 		}
+
 		switch data.EventType {
 		case Message:
 			fmt.Println("data: ", data)
@@ -117,6 +118,8 @@ func (c *Client) fromWebsocketToHub() {
 			fmt.Println("user", c.username, "joined room: ", data.Message)
 		case Leave:
 			fmt.Println("user", c.username, "left room")
+		default:
+			panic("event_type not recognized")
 		}
 	}
 }

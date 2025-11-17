@@ -1,17 +1,24 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
-	"github.com/gorilla/sessions"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo-contrib/session"
+	"github.com/jmoiron/sqlx"
+	"github.com/joho/godotenv"
+	echojwt "github.com/labstack/echo-jwt"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/zeroyukiy/the-throne-api/handler"
 	"github.com/zeroyukiy/the-throne-api/internal"
 )
@@ -19,6 +26,22 @@ import (
 type User struct {
 	Name string `json:"name"`
 	Age  int    `json:"age"`
+}
+
+type Message struct {
+	Username  string `json:"username"`
+	Avatar    string `json:"avatar"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"created_at"`
+}
+
+var messages []*Message = []*Message{
+	{
+		Username:  "John Snow Prime",
+		Avatar:    "",
+		Message:   "Sed ligula tellus, dignissim non urna sed, commodo ullamcorper lorem. Cras ac scelerisque mauris. Aliquam metus neque, fringilla a ligula id, auctor tempus nulla. Donec euismod libero quis felis eleifend blandit pharetra in libero. Aenean interdum ultrices lorem, eu interdum velit convallis eu.",
+		CreatedAt: time.Now().Format("15:04"),
+	},
 }
 
 var upgrader = websocket.Upgrader{
@@ -31,7 +54,7 @@ func cors(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// c.Response().Header().Set("Access-Control-Allow-Origin", "*")
 		c.Response().Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
-		c.Response().Header().Set("Access-Control-Allow-Headers", "origin, content-type, accept")
+		c.Response().Header().Set("Access-Control-Allow-Headers", "origin, content-type, accept, authorization")
 		c.Response().Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Response().Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -43,311 +66,191 @@ func cors(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func auth(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		sess, err := session.Get("user", c)
-		if err != nil {
-			return c.JSON(http.StatusUnauthorized, nil)
-		}
-		if sess.Values["username"] != "pippo" {
-			return c.JSON(http.StatusUnauthorized, nil)
-		}
-		sess.Save(c.Request(), c.Response())
-		user := &User{
-			Name: sess.Values["username"].(string),
-		}
-		c.Set("user", user)
-		return next(c)
-	}
-}
-
-// type jwtCustomClaims struct {
-// 	Name  string `json:"name"`
-// 	Admin bool   `json:"admin"`
-// 	jwt.RegisteredClaims
+// func spa(next echo.HandlerFunc) echo.HandlerFunc {
+// 	return func(c echo.Context) error {
+// 		if c.Response().Status == http.StatusNotFound {
+// 			fmt.Println("status: ", 404)
+// 			t, err := template.ParseFiles("public/index.html")
+// 			if err != nil {
+// 				fmt.Println(err)
+// 			}
+// 			return t.ExecuteTemplate(c.Response(), "index.html", nil)
+// 		}
+// 		return next(c)
+// 	}
 // }
 
-type LoginBinding struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-func login(c echo.Context) error {
-	login := &LoginBinding{}
-	err := c.Bind(login)
+func init() {
+	err := godotenv.Load()
 	if err != nil {
-		return echo.ErrBadRequest
+		log.Fatal("Error loading .env file")
 	}
-
-	if login.Username != "pippo" || login.Password != "abcd1234" {
-		return echo.ErrNotFound
-	}
-
-	sess, err := session.Get("user", c)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	sess.Values["user_id"] = 1
-	sess.Values["is_auth"] = true
-	sess.Values["username"] = login.Username
-	sess.Values["avatar"] = "http://localhost:8000/assets/avatars/pippo.jpg"
-
-	sess.Save(c.Request(), c.Response())
-
-	// c.SetCookie(&http.Cookie{
-	// 	Name:     "user",
-	// 	Value:    "ok",
-	// 	Path:     "/",
-	// 	Domain:   "localhost",
-	// 	Secure:   false,
-	// 	Expires:  time.Now().Add(time.Hour * 24 * 30),
-	// 	HttpOnly: true,
-	// 	SameSite: http.SameSiteLaxMode,
-	// })
-
-	t := "ok"
-
-	// claims := &jwtCustomClaims{
-	// 	Name:  "Pippo",
-	// 	Admin: true,
-	// 	RegisteredClaims: jwt.RegisteredClaims{
-	// 		Issuer:    "localhost",
-	// 		Subject:   "user",
-	// 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 18)),
-	// 	},
-	// }
-
-	// token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	// t, err := token.SignedString([]byte("my_secret_string"))
-	// if err != nil {
-	// 	return err
-	// }
-
-	// claims_2 := &jwtCustomClaims{
-	// 	Name:  "Pippo",
-	// 	Admin: true,
-	// 	RegisteredClaims: jwt.RegisteredClaims{
-	// 		Issuer:    "localhost",
-	// 		Subject:   "user",
-	// 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 24 * 30)),
-	// 		NotBefore: jwt.NewNumericDate(time.Now()),
-	// 	},
-	// }
-
-	// refresh_token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims_2)
-
-	// r, err := refresh_token.SignedString([]byte("my_secret_string"))
-	// if err != nil {
-	// 	return err
-	// }
-
-	// // put the refresh_token in the cookie
-	// c.SetCookie(&http.Cookie{
-	// 	Name:     "refresh_token",
-	// 	Value:    r,
-	// 	Path:     "/",
-	// 	Domain:   "localhost",
-	// 	Secure:   false,
-	// 	Expires:  time.Now().Add(time.Hour * 24 * 30),
-	// 	HttpOnly: true,
-	// 	SameSite: http.SameSiteLaxMode,
-	// })
-
-	return c.JSON(http.StatusOK, echo.Map{
-		"token": t,
-	})
 }
-
-// func refresh(c echo.Context) error {
-// 	cookie, err := c.Cookie("refresh_token")
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return c.JSON(http.StatusUnauthorized, echo.Map{
-// 			"error": "no refresh_token",
-// 		})
-// 	}
-
-// 	claims := &jwtCustomClaims{}
-// 	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
-// 		return []byte("my_secret_string"), nil
-// 	})
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return c.JSON(http.StatusInternalServerError, echo.Map{
-// 			"error": "error",
-// 		})
-// 	}
-
-// 	fmt.Println("claims token from cookie: ", claims)
-
-// 	if claims.ExpiresAt.Unix() < time.Now().Unix() {
-// 		return c.JSON(http.StatusUnauthorized, echo.Map{
-// 			"error": "refresh_token has expired, you need to login.",
-// 		})
-// 	}
-
-// 	// TODO clean this shit
-// 	claims = &jwtCustomClaims{
-// 		Name:  claims.Name,
-// 		Admin: claims.Admin,
-// 		RegisteredClaims: jwt.RegisteredClaims{
-// 			Issuer:    "localhost",
-// 			Subject:   "user",
-// 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 18)),
-// 		},
-// 	}
-
-// 	token = jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-// 	t, err := token.SignedString([]byte("my_secret_string"))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	claims_2 := &jwtCustomClaims{
-// 		Name:  claims.Name,
-// 		Admin: claims.Admin,
-// 		RegisteredClaims: jwt.RegisteredClaims{
-// 			Issuer:    "localhost",
-// 			Subject:   "user",
-// 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 24 * 30)),
-// 			NotBefore: jwt.NewNumericDate(time.Now()),
-// 		},
-// 	}
-
-// 	refresh_token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims_2)
-
-// 	r, err := refresh_token.SignedString([]byte("my_secret_string"))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// put the refresh_token in the cookie
-// 	c.SetCookie(&http.Cookie{
-// 		Name:     "refresh_token",
-// 		Value:    r,
-// 		Path:     "/",
-// 		Domain:   "localhost",
-// 		Secure:   false,
-// 		Expires:  time.Now().Add(time.Hour * 24 * 30),
-// 		HttpOnly: true,
-// 		SameSite: http.SameSiteLaxMode,
-// 	})
-
-// 	// the garbage end here
-
-// 	return c.JSON(http.StatusOK, echo.Map{
-// 		"message": "new access token and refresh token",
-// 		"token":   t,
-// 	})
-// }
 
 func main() {
 	hub := internal.NewHub()
 	go hub.Run()
 
-	chatHandler := handler.NewChatHandler(hub)
+	// chatHandler := handler.NewChatHandler(hub)
 
 	e := echo.New()
 	e.Use(cors)
-	sessionStore := sessions.NewFilesystemStore("./sessions", []byte("hello"))
-	sessionStore.MaxAge(3600) // expires after 1 hr
-	sessionStore.Options.HttpOnly = true
-	// sessionStore.Options.SameSite = http.SameSiteLaxMode
-	sessionStore.Options.SameSite = http.SameSiteNoneMode
-	// sessionStore.Options.SameSite = http.SameSiteLaxMode
-	sessionStore.Options.Secure = true
-	e.Use(session.Middleware(sessionStore))
+
+	// e.Use(middleware.Logger())
+	// e.Use(middleware.Gzip())
+
+	// e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
+	// 	Root:   "public",     // This is the path to your SPA build folder, the folder that is created from running "npm build"
+	// 	Index:  "index.html", // This is the default html page for your SPA
+	// 	Browse: false,
+	// 	HTML5:  true,
+	// }))
 
 	e.Static("/assets", "./public")
-	e.GET("/", func(c echo.Context) error {
-		sess, err := session.Get("user", c)
-		if err != nil {
-			fmt.Println(err)
-		}
-		sess.Save(c.Request(), c.Response())
 
+	// DATABASE
+	// conn := database.Init()
+	// if err := conn.Ping(); err != nil {
+	// 	log.Fatal("database error connection: ", err)
+	// }
+	var conn *sqlx.DB = &sqlx.DB{}
+
+	handler := handler.NewAuthHandler(conn)
+
+	e.GET("/", func(c echo.Context) error {
 		t, err := template.ParseFiles("index.html")
 		if err != nil {
 			fmt.Println(err)
 		}
-		return t.ExecuteTemplate(c.Response(), "index.html", sess.Values["username"])
+		return t.ExecuteTemplate(c.Response(), "index.html", nil)
 	})
 
-	e.POST("/api/login", login)
+	// these endpoints need limit middleware
+	e.POST("/api/auth/login", handler.Login)
+	e.POST("/api/auth/logout", handler.Logout)
+
+	csrf_config := middleware.CSRFConfig{
+		TokenLookup:    "cookie:_csrf",
+		CookiePath:     "/",
+		CookieDomain:   "localhost",
+		CookieSecure:   true,
+		CookieHTTPOnly: true,
+		CookieSameSite: http.SameSiteStrictMode,
+	}
+	refresh := e.Group("/api/auth", middleware.CSRFWithConfig(csrf_config))
+	{
+		refresh.GET("/refresh", handler.Refresh)
+	}
+
+	config := echojwt.Config{
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			return new(internal.JwtCustomClaims)
+		},
+		SigningKey: []byte("my_secret_string"),
+	}
 
 	r := e.Group("/api")
 	{
-		r.Use(auth)
-		// r.Use(session.Middleware(sessions.NewCookieStore([]byte("secret"))))
-		// r.Use(session.Middleware(sessions.NewFilesystemStore("./sessions", []byte("hello"))))
+		// r.GET("/csrf-token", func(c echo.Context) error {
+		// 	// fmt.Println(c.Get("csrf").(string))
+		// 	csrf := c.Get("csrf").(string)
 
-		// config := echojwt.Config{
-		// 	NewClaimsFunc: func(c echo.Context) jwt.Claims {
-		// 		return new(jwtCustomClaims)
-		// 	},
-		// 	SigningKey: []byte("my_secret_string"),
-		// }
+		// 	return c.JSON(http.StatusOK, echo.Map{
+		// 		"_csrf": csrf,
+		// 	})
+		// })
 
-		// r.Use(echojwt.WithConfig(config))
+		r.Use(echojwt.WithConfig(config))
 
-		r.GET("/restricted_page", func(c echo.Context) error {
-			session, err := session.Get("user", c)
+		r.GET("/me", func(c echo.Context) error {
+			claims := c.Get("user").(*jwt.Token).Claims.(*internal.JwtCustomClaims)
+
+			return c.JSON(http.StatusOK, echo.Map{
+				"user": map[string]interface{}{
+					"name":   claims.Name,
+					"avatar": claims.Avatar,
+				},
+			})
+		})
+
+		type MessageBinding struct {
+			Message string `json:"message"`
+		}
+
+		r.POST("/message", func(c echo.Context) error {
+			claims := c.Get("user").(*jwt.Token).Claims.(*internal.JwtCustomClaims)
+
+			message := &MessageBinding{}
+			err := c.Bind(message)
 			if err != nil {
 				fmt.Println(err)
+				return c.JSON(http.StatusInternalServerError, err)
 			}
-			fmt.Println(session)
-			name := session.Values["username"].(string)
-			return c.JSON(http.StatusOK, echo.Map{
-				"message": "Welcome " + name + "!",
-			})
+
+			msg := &Message{
+				Username:  claims.Name,
+				Avatar:    claims.Avatar,
+				Message:   message.Message,
+				CreatedAt: time.Now().Format("15:04"),
+			}
+
+			messages = append(messages, msg)
+			return c.JSON(http.StatusOK, nil)
+		})
+
+		type ChatRoomBinding struct {
+			Id string `param:"chat_id"`
+		}
+
+		r.GET("/messages/:chat_id", func(c echo.Context) error {
+			chat_room := &ChatRoomBinding{}
+			err := c.Bind(chat_room)
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, err)
+			}
+			return c.JSON(http.StatusOK, messages)
 		})
 	}
 
-	e.GET("/prova", func(c echo.Context) error {
-		u := struct {
-			Name string `json:"name"`
-		}{}
-		err := c.Bind(&u)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, err)
-		}
-		user := &User{
-			Name: u.Name,
-			Age:  20,
-		}
-		return c.JSON(http.StatusOK, user)
-	})
+	// e.GET("/avatars", cors(func(c echo.Context) error {
+	// 	avatars := make(map[string][]string)
+	// 	// entries, err := os.ReadDir("./sticker")
+	// 	entries, err := os.ReadDir("./faceset")
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 		return c.JSON(http.StatusInternalServerError, err)
+	// 	}
+	// 	for _, e := range entries {
+	// 		avatars["avatars"] = append(avatars["avatars"], e.Name())
+	// 	}
+	// 	return c.JSON(http.StatusOK, avatars)
+	// }))
 
-	e.GET("/avatars", cors(func(c echo.Context) error {
-		avatars := make(map[string][]string)
-		// entries, err := os.ReadDir("./sticker")
-		entries, err := os.ReadDir("./faceset")
-		if err != nil {
-			log.Println(err)
-			return c.JSON(http.StatusInternalServerError, err)
-		}
-		for _, e := range entries {
-			avatars["avatars"] = append(avatars["avatars"], e.Name())
-		}
-		return c.JSON(http.StatusOK, avatars)
-	}))
-
-	e.GET("/chat/:id", cors(chatHandler.GetRoom))
+	// e.GET("/api/chat/:id", cors(chatHandler.GetRoom))
 
 	e.GET("/ws", func(c echo.Context) error {
-		sess, err := session.Get("user", c)
+		authBinding := &struct {
+			Authorization string `query:"auth"`
+		}{}
+
+		err := c.Bind(authBinding)
 		if err != nil {
 			fmt.Println(err)
+			return c.JSON(http.StatusBadRequest, "no auth")
 		}
 
-		if sess.Values["username"] == nil {
-			return c.JSON(http.StatusUnauthorized, echo.Map{
-				"error": "you're not logged",
+		claims := &internal.JwtCustomClaims{}
+		_, err = jwt.ParseWithClaims(authBinding.Authorization, claims, func(t *jwt.Token) (interface{}, error) {
+			return []byte("my_secret_string"), nil
+		})
+		if err != nil {
+			fmt.Println(err)
+			return c.JSON(http.StatusBadRequest, echo.Map{
+				"error": "error with the token",
 			})
 		}
+
+		fmt.Println(claims)
 
 		conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 		if err != nil {
@@ -355,101 +258,133 @@ func main() {
 		}
 
 		// create a client
-		client := internal.NewClient(conn, hub, sess.Values["username"].(string), sess.Values["avatar"].(string))
+		client := internal.NewClient(conn, hub, claims.Name, claims.Avatar)
 		hub.RegisterClient(client)
 		client.Run()
 
 		return nil
 	})
 
-	type Message struct {
-		Username  string `json:"username"`
-		Avatar    string `json:"avatar"`
-		Message   string `json:"message"`
-		CreatedAt string `json:"created_at"`
+	type AccessTokenResponse struct {
+		AccessToken  string `json:"access_token"`
+		TokenType    string `json:"token_type"`
+		Expires      int    `json:"expires_in"`
+		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
 	}
 
-	var messages []*Message = []*Message{
-		{
-			Username:  "John Snow Prime",
-			Avatar:    "",
-			Message:   "Sed ligula tellus, dignissim non urna sed, commodo ullamcorper lorem. Cras ac scelerisque mauris. Aliquam metus neque, fringilla a ligula id, auctor tempus nulla. Donec euismod libero quis felis eleifend blandit pharetra in libero. Aenean interdum ultrices lorem, eu interdum velit convallis eu.",
-			CreatedAt: time.Now().Format("15:04"),
-		},
+	type UserDiscordResponse struct {
+		Id       string `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+		//   "username": "Nelly",
+		//   "global_name": null,
+		//   "discriminator": "1337",
+		//   "avatar": "8342729096ea3675442027381ff50dfe",
+		//   "verified": true,
+		//   "email": "nelly@discord.com",
+		//   "flags": 64,
+		//   "banner": "06c16474723fe537c283b8efa61a30c8",
+		//   "accent_color": 16711680,
+		//   "premium_type": 1,
+		//   "public_flags": 64,
+		//   "avatar_decoration_data": {
+		//     "sku_id": "1144058844004233369",
+		//     "asset": "a_fed43ab12698df65902ba06727e20c0e"
+		//   },
+		//   "collectibles": {
+		//     "nameplate": {
+		//       "sku_id": "2247558840304243311",
+		//       "asset": "nameplates/nameplates/twilight/",
+		//       "label": "",
+		//       "palette": "cobalt"
+		//     }
+		//   },
+		//   "primary_guild": {
+		//     "identity_guild_id": "1234647491267808778",
+		//     "identity_enabled": true,
+		//     "tag": "DISC",
+		//     "badge": "7d1734ae5a615e82bc7a4033b98fade8"
+		//   }
 	}
 
-	type ChatRoomBinding struct {
-		Id string `param:"chat_id"`
+	type CodeBinding struct {
+		Code string `query:"code"`
 	}
+	e.GET("/prova", func(c echo.Context) error {
+		endpoint := "https://discord.com/api/v10"
+		client_id := os.Getenv("DISCORD_CLIENT_ID")
+		client_secret := os.Getenv("DISCORD_CLIENT_SECRET")
+		redirect_uri := "http://localhost:8000/prova"
 
-	e.GET("/api/messages/:chat_id", func(c echo.Context) error {
-		chat_room := &ChatRoomBinding{}
-		err := c.Bind(chat_room)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, err)
-		}
-		return c.JSON(http.StatusOK, messages)
-	})
-
-	type MessageBinding struct {
-		Message string `json:"message"`
-	}
-
-	e.POST("/api/message", auth(func(c echo.Context) error {
-		sess, err := session.Get("user", c)
+		code := &CodeBinding{}
+		err := c.Bind(code)
 		if err != nil {
 			fmt.Println(err)
-			return c.JSON(http.StatusUnauthorized, nil)
+			return c.JSON(http.StatusInternalServerError, nil)
 		}
 
-		message := &MessageBinding{}
-		err = c.Bind(message)
+		data := url.Values{}
+		data.Set("grant_type", "authorization_code")
+		data.Set("code", code.Code)
+		data.Set("redirect_uri", redirect_uri)
+
+		client := &http.Client{}
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s/oauth2/token", endpoint), strings.NewReader(data.Encode()))
 		if err != nil {
 			fmt.Println(err)
-			return c.JSON(http.StatusInternalServerError, err)
+		}
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.SetBasicAuth(client_id, client_secret)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer resp.Body.Close()
+
+		// client.Post(fmt.Sprintf("%s/oauth2/token", endpoint), "", nil)
+
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println(err)
 		}
 
-		msg := &Message{
-			Username:  sess.Values["username"].(string),
-			Avatar:    sess.Values["avatar"].(string),
-			Message:   message.Message,
-			CreatedAt: time.Now().Format("15:04"),
+		accessTokenResponse := &AccessTokenResponse{}
+		err = json.Unmarshal(b, accessTokenResponse)
+		if err != nil {
+			fmt.Println(err)
 		}
 
-		messages = append(messages, msg)
-		return c.JSON(http.StatusOK, nil)
-	}))
+		user := &UserDiscordResponse{}
 
-	e.GET("/api/me", auth(func(c echo.Context) error {
-		// sess, err := session.Get("user", c)
-		// if err != nil {
-		// 	fmt.Println(err)
-		// 	return c.JSON(http.StatusUnauthorized, "not authorizated.")
-		// }
+		req, err = http.NewRequest("GET", "https://discord.com/api/users/@me", nil)
+		if err != nil {
+			fmt.Println(err)
+		}
+		req.Header.Add("Authorization", "Bearer "+accessTokenResponse.AccessToken)
+		resp, err = client.Do(req)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer resp.Body.Close()
 
-		// if sess.Values["username"] != nil {
+		// fmt.Println(resp)
 
-		// }
+		b, err = io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println(err)
+		}
 
-		user := c.Get("user").(*User)
-		fmt.Println("session from context: ", user)
+		err = json.Unmarshal(b, user)
+		if err != nil {
+			fmt.Println(err)
+		}
 
-		return c.JSON(http.StatusOK, user)
-	}))
-
-	e.POST("/api/auth/logout", auth(func(c echo.Context) error {
-		sess, _ := session.Get("user", c)
-		sess.Values = nil
-		sess.Save(c.Request(), c.Response())
-
-		c.SetCookie(&http.Cookie{
-			Name:   "user",
-			Value:  "",
-			MaxAge: -1,
+		return c.JSON(http.StatusOK, echo.Map{
+			"user": user,
 		})
-
-		return c.JSON(http.StatusOK, nil)
-	}))
+	})
 
 	e.Logger.Fatal(e.Start("localhost:8000"))
 }

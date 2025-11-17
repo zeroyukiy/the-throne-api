@@ -23,11 +23,11 @@
       <input type="submit" value="login" id="login" />
     </div>
 
-    <p>username: {{ . }}</p>
+    <p>username: {{ .username }}</p>
     <a href="" id="refresh_token">refresh_token</a>
 
     <div id="restricted_page"></div>
-    <button id="load">load</button>
+    <button id="loading">load</button>
 
     <div class="pin"></div>
     <br />
@@ -37,23 +37,58 @@
     <ul></ul>
 
     <script>
-      // restricted_page
-      document.querySelector("#load").addEventListener("click", async (e) => {
-        const req = await fetch("http://localhost:8000/api/restricted_page", {
+      // const cookie = document.cookie.split("_csrf=");
+      // const _csrf = cookie[1];
+      // const _csrf = document.querySelector("input[name='_csrf']").value;
+      // console.log(_csrf);
+
+      window.addEventListener("load", async () => {
+        const req = await fetch("http://localhost:8000/api/csrf-token", {
           headers: {
             "Content-Type": "application/json",
-            Authorization: "Bearer " + localStorage.getItem("token"),
           },
           method: "get",
         });
         if (req.ok) {
           const data = await req.json();
           console.log(data);
-          const { message } = data;
-          const div = (document.querySelector("#restricted_page").textContent =
-            message);
+          const { _csrf } = data;
+          localStorage.setItem("_csrf", _csrf);
+          // document
+          //   .querySelector("meta[name='_csrf']")
+          //   .setAttribute("content", _csrf);
         }
       });
+
+      // restricted_page
+      document
+        .querySelector("#loading")
+        .addEventListener("click", async (e) => {
+          // const req = await fetch("http://localhost:8000/api/restricted_page", {
+          const req = await fetch("http://localhost:8000/api/prova", {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + localStorage.getItem("token"),
+              // "X-CSRF-TOKEN": localStorage.getItem("_csrf"),
+              // document
+              //   .querySelector("meta[name='_csrf']")
+              //   .getAttribute("content"),
+            },
+            body: JSON.stringify({
+              name: "yepp",
+            }),
+            // method: "get",
+            method: "post",
+          });
+          if (req.ok) {
+            const data = await req.json();
+            console.log(data);
+            const { message } = data;
+            const div = (document.querySelector(
+              "#restricted_page"
+            ).textContent = message);
+          }
+        });
 
       // refresh
       const refresh = document
@@ -103,21 +138,23 @@
       // endlogin
 
       const eventType = {
-        Join: 0,
-        Leave: 1,
-        Message: 2,
-        Latency: 3,
+        Join: 1,
+        Leave: 2,
+        Message: 3,
+        Latency: 4,
       };
-      let ws = new WebSocket("http://localhost:8000/ws");
+      let ws = new WebSocket(
+        `http://localhost:8000/ws?auth=${localStorage.getItem("token")}`
+      );
       ws.onopen = () => {
         console.log("open");
-        fetch("http://127.0.0.1:8000/chat/123")
+        fetch("http://localhost:8000/chat/123")
           .then((r) => r.json())
           .then((json) => {
             console.log(json);
             ws.send(
               JSON.stringify({
-                eventType: eventType.Join,
+                event_type: eventType.Join,
                 message: "123",
               })
             );
@@ -126,11 +163,11 @@
       ws.onmessage = (msg) => {
         // console.log(msg)
         let data = JSON.parse(msg.data);
-        if (data.eventType == eventType.Message) {
+        if (data.event_type == eventType.Message) {
           let child = document.createElement("li");
           child.textContent = data.message;
           document.querySelector("ul").appendChild(child);
-        } else if (data.eventType == eventType.Latency) {
+        } else if (data.event_type == eventType.Latency) {
           console.log("latency: " + data.message);
           document.querySelector("div.pin").style.backgroundColor =
             data.message;
@@ -141,7 +178,7 @@
       function send() {
         let t = document.querySelector("#t").value;
         let data = JSON.stringify({
-          eventType: eventType.Message,
+          event_type: eventType.Message,
           message: t,
         });
         ws.send(data);

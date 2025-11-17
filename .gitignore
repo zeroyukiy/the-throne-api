@@ -2,4 +2,5 @@ faceset
 sticker
 
 .git
-sessions/*
+sessions
+.env
