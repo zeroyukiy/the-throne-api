@@ -12,7 +12,6 @@ type Hub struct {
 }
 
 func NewHub() *Hub {
-
 	return &Hub{
 		clients:          make(map[*Client]bool),
 		registerClient:   make(chan *Client),
@@ -28,11 +27,14 @@ func (h *Hub) Run() {
 		case client := <-h.registerClient:
 			fmt.Println("client connected")
 			h.clients[client] = true
+			fmt.Println("clients: ", len(h.clients))
 		case client := <-h.unregisterClient:
 			fmt.Println("client disconnected")
 			// h.clients[client] = false
 			close(client.send)
+			client.conn.Close()
 			delete(h.clients, client)
+			fmt.Println("clients: ", len(h.clients))
 		case msg := <-h.broadcast:
 			for client, ok := range h.clients {
 				if ok {
@@ -52,9 +54,11 @@ func (h *Hub) UnregisterClient(client *Client) {
 }
 
 func (h *Hub) Broadcast(client *Client, b []byte) {
-	for client, ok := range h.clients {
+	for c, ok := range h.clients {
 		if ok {
-			client.send <- b
+			if c.conn != client.conn {
+				c.send <- b
+			}
 		}
 	}
 }

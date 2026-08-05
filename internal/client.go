@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -11,21 +12,33 @@ import (
 )
 
 var (
-	pongTime = 60 * time.Second
+	// pongTime = 60 * time.Second
+	pongTime = 8 * time.Second
 	pingTime = 9 * pongTime / 10
 
 	writeTime = 10 * time.Second
 )
 
-type LatencyQuality string
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		if r.Header.Get("Origin") == "http://localhost:5173" {
+			return true
+		}
+		return false
+	},
+}
 
-const (
-	Optimal LatencyQuality = "#1B5E20"
-	Good    LatencyQuality = "#4CAF50"
-	Normal  LatencyQuality = "#FAFAFA"
-	Bad     LatencyQuality = "#FF9800"
-	Awful   LatencyQuality = "#B71C1C"
-)
+// type LatencyQuality string
+
+// const (
+// 	Optimal LatencyQuality = "#1B5E20"
+// 	Good    LatencyQuality = "#4CAF50"
+// 	Normal  LatencyQuality = "#FAFAFA"
+// 	Bad     LatencyQuality = "#FF9800"
+// 	Awful   LatencyQuality = "#B71C1C"
+// )
 
 type DataRequest struct {
 	EventType EventType `json:"event_type"`
@@ -68,21 +81,20 @@ func (c *Client) Run() {
 func (c *Client) fromWebsocketToHub() {
 	defer func() {
 		c.hub.unregisterClient <- c
-		c.conn.Close()
 	}()
 
 	// done := make(chan struct{})
 	c.conn.SetReadDeadline(time.Now().Add(pongTime))
 	c.conn.SetPongHandler(func(appData string) error {
 		// fmt.Println("received a pong from the client")
-		latency_status := LatencyStatus(c.latency)
-		latency := &DataRequest{
-			EventType: Latency,
-			// Message:   fmt.Sprintf("%.1fms", float32(time.Since(c.latency).Microseconds())/1000),
-			Message: string(latency_status),
-		}
+		// latency_status := LatencyStatus(c.latency)
+		// latency := &DataRequest{
+		// 	EventType: Latency,
+		// 	// Message:   fmt.Sprintf("%.1fms", float32(time.Since(c.latency).Microseconds())/1000),
+		// 	Message: string(latency_status),
+		// }
 		c.conn.SetReadDeadline(time.Now().Add(pongTime)) // receiving a pong message from the client is resetting the read dead line
-		c.conn.WriteJSON(latency)
+		// c.conn.WriteJSON(latency)
 		return nil
 	})
 
@@ -100,7 +112,7 @@ func (c *Client) fromWebsocketToHub() {
 
 		switch data.EventType {
 		case Message:
-			fmt.Println("data: ", data)
+			// fmt.Println("data: ", data)
 			data_response := &DataResponse{
 				EventType: data.EventType,
 				Username:  c.username,
@@ -112,6 +124,7 @@ func (c *Client) fromWebsocketToHub() {
 			if err != nil {
 				fmt.Println(err)
 			}
+			fmt.Println(data_response)
 			// c.hub.broadcast <- b
 			c.hub.Broadcast(c, b)
 		case Join:
@@ -161,24 +174,42 @@ func (c *Client) fromHubToWebsocket() {
 				c.hub.unregisterClient <- c
 				return
 			}
-			c.mu.Lock()
-			c.latency = time.Now()
-			c.mu.Unlock()
+			// c.mu.Lock()
+			// c.latency = time.Now()
+			// c.mu.Unlock()
 		}
 	}
 }
 
-func LatencyStatus(t time.Time) LatencyQuality {
-	l := time.Since(t).Milliseconds()
-	if l <= 30 {
-		return Optimal
-	} else if l > 30 && l <= 100 {
-		return Good
-	} else if l > 100 && l <= 150 {
-		return Normal
-	} else if l > 150 && l <= 250 {
-		return Bad
-	} else {
-		return Awful
+// func LatencyStatus(t time.Time) LatencyQuality {
+// 	l := time.Since(t).Milliseconds()
+// 	if l <= 30 {
+// 		return Optimal
+// 	} else if l > 30 && l <= 100 {
+// 		return Good
+// 	} else if l > 100 && l <= 150 {
+// 		return Normal
+// 	} else if l > 150 && l <= 250 {
+// 		return Bad
+// 	} else {
+// 		return Awful
+// 	}
+// }
+
+func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, user *User) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
+	client := &Client{
+		conn:     conn,
+		send:     make(chan []byte, 256),
+		hub:      hub,
+		username: user.Username,
+		avatar:   "",
+	}
+	client.hub.registerClient <- client
+
+	client.Run()
 }
