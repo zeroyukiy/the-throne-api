@@ -5,14 +5,19 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
+	"github.com/zeroyukiy/the-throne-api/database/entity"
+	"github.com/zeroyukiy/the-throne-api/database/repository"
 	"github.com/zeroyukiy/the-throne-api/internal"
 )
 
@@ -34,12 +39,6 @@ var messages []*Message = []*Message{
 		Avatar:    "",
 		Message:   "Sed ligula tellus, dignissim non urna sed, commodo ullamcorper lorem. Cras ac scelerisque mauris. Aliquam metus neque, fringilla a ligula id, auctor tempus nulla. Donec euismod libero quis felis eleifend blandit pharetra in libero. Aenean interdum ultrices lorem, eu interdum velit convallis eu.",
 		CreatedAt: time.Now().Format("15:04"),
-	},
-}
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
 	},
 }
 
@@ -70,7 +69,15 @@ func init() {
 
 func main() {
 	hub := internal.NewHub()
+	roomRepo := hub.InitRoomRepository([]string{"hello", "pippo", "chat"})
 	go hub.Run()
+
+	// DATABASE
+	// conn := database.Init()
+	// if err := conn.Ping(); err != nil {
+	// 	log.Fatal("database error connection: ", err)
+	// }
+	var conn *sqlx.DB = &sqlx.DB{}
 
 	router := gin.Default()
 
@@ -85,11 +92,18 @@ func main() {
 
 	// Create cookie-based session store with a secret key
 	store := cookie.NewStore([]byte("your-secret-key"))
+
+	// store, err := postgres.NewStore(conn.DB, []byte("secret"))
+	// if err != nil {
+	// 	// handle err
+	// }
+
 	store.Options(sessions.Options{
 		HttpOnly: true,
-		Secure:   true,
-		MaxAge:   3600 * 2,
+		// Secure:   true,
+		MaxAge: 3600 * 2,
 	})
+
 	router.Use(sessions.Sessions("mysession", store))
 
 	// e.Use(middleware.Logger())
@@ -97,14 +111,60 @@ func main() {
 
 	router.Static("/assets", "./public")
 
-	// DATABASE
-	// conn := database.Init()
-	// if err := conn.Ping(); err != nil {
-	// 	log.Fatal("database error connection: ", err)
-	// }
-	// var conn *sqlx.DB = &sqlx.DB{}
+	router.GET("/chat/list", func(c *gin.Context) {
+		type Room struct {
+			Id     string   `json:"room_id"`
+			Status string   `json:"status"`
+			Users  []string `json:"users"`
+		}
+		type Result struct {
+			Rooms []Room `json:"rooms"`
+		}
+		res := Result{}
+		list := roomRepo.ListRooms()
+		for _, r := range list {
+			res.Rooms = append(res.Rooms, Room{
+				Id:     r.GetRoomId(),
+				Status: r.GetStatus(),
+				Users:  r.GetClients(),
+			})
+		}
+		sort.Slice(res.Rooms, func(i, j int) bool {
+			if res.Rooms[i].Id < res.Rooms[j].Id {
+				return true
+			} else {
+				return false
+			}
+		})
+		c.JSON(http.StatusOK, res)
+	})
 
-	// handler := handler.NewAuthHandler(conn)
+	router.GET("/chat/:room_id/update", func(c *gin.Context) {
+		room_id := c.Param("room_id")
+		room, ok := roomRepo.GetRoom(room_id)
+		if ok {
+			room.UpdateRoom("spaccatore")
+		}
+		c.JSON(http.StatusOK, nil)
+	})
+
+	router.GET("/chat/:room_id", func(c *gin.Context) {
+		type Result struct {
+			RoomId  string   `json:"room_id"`
+			Clients []string `json:"clients"`
+		}
+		room_id := c.Param("room_id")
+		room, ok := roomRepo.GetRoom(room_id)
+		if ok {
+			res := Result{
+				RoomId:  room.GetRoomId(),
+				Clients: room.GetClients(),
+			}
+			c.JSON(http.StatusOK, res)
+			return
+		}
+		c.JSON(http.StatusNotFound, nil)
+	})
 
 	router.POST("/login", func(c *gin.Context) {
 		var login LoginForm
@@ -112,11 +172,22 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		user := internal.User{
-			Username:  login.Username,
-			Age:       99,
-			CreatedAt: time.Now().UnixMilli(),
+
+		// userRepo := repository.NewUserRepository(conn)
+		// user, err := userRepo.Get(login.Username, login.Password)
+		// if err != nil {
+		// 	c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		// 	return
+		// }
+
+		uid := uuid.New()
+
+		user := entity.User{
+			Id:       uid.String(),
+			Username: login.Username,
+			Avatar:   "http://localhost:8000/assets/avatars/pippo.jpg",
 		}
+
 		b, err := json.Marshal(user)
 		if err != nil {
 			fmt.Println(err)
@@ -135,8 +206,11 @@ func main() {
 	})
 
 	router.GET("/@me", func(c *gin.Context) {
-		var user *internal.User
+		var user *entity.User
 		session := sessions.Default(c)
+		//
+
+		//
 		u := session.Get("user")
 		if u != nil {
 			err := json.Unmarshal(u.([]byte), &user)
@@ -147,8 +221,8 @@ func main() {
 			}
 			session.Options(sessions.Options{
 				HttpOnly: true,
-				Secure:   true,
-				MaxAge:   3600 * 2,
+				// Secure:   true,
+				MaxAge: 3600 * 2,
 			})
 			session.Save()
 			c.JSON(http.StatusOK, gin.H{"user": user})
@@ -157,12 +231,34 @@ func main() {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
 	})
 
+	router.GET("/users/:id/cards", func(c *gin.Context) {
+		user_id := c.Param("id")
+		id, err := strconv.ParseInt(user_id, 10, 64)
+		if err != nil {
+			fmt.Println(err)
+		}
+		userRepo := repository.NewUserRepository(conn)
+		cards, err := userRepo.GetCards(int(id))
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		c.JSON(http.StatusOK, cards)
+	})
+
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "welcome"})
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
-		var user *internal.User
+		var user *entity.User
+
+		// user = &entity.User{
+		// 	Username: "pippo",
+		// 	Id:       "123",
+		// 	Avatar:   "http://localhost:8000/assets/avatars/pippo.jpg",
+		// }
+
 		session := sessions.Default(c)
 		u := session.Get("user")
 		if u != nil {

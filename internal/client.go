@@ -5,52 +5,31 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/zeroyukiy/the-throne-api/database/entity"
+	"github.com/zeroyukiy/the-throne-api/internal/event"
 )
 
 var (
 	// pongTime = 60 * time.Second
-	pongTime = 8 * time.Second
+	pongTime = 20 * time.Second
 	pingTime = 9 * pongTime / 10
 
-	writeTime = 10 * time.Second
+	writeTime = 5 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		if r.Header.Get("Origin") == "http://localhost:5173" {
-			return true
-		}
-		return false
+		// if r.Header.Get("Origin") == "http://localhost:5173" {
+		return true
+		// }
+		// return false
 	},
-}
-
-// type LatencyQuality string
-
-// const (
-// 	Optimal LatencyQuality = "#1B5E20"
-// 	Good    LatencyQuality = "#4CAF50"
-// 	Normal  LatencyQuality = "#FAFAFA"
-// 	Bad     LatencyQuality = "#FF9800"
-// 	Awful   LatencyQuality = "#B71C1C"
-// )
-
-type DataRequest struct {
-	EventType EventType `json:"event_type"`
-	Message   string    `json:"message"`
-}
-
-type DataResponse struct {
-	EventType EventType `json:"event_type"`
-	Username  string    `json:"username"`
-	Avatar    string    `json:"avatar"`
-	Message   string    `json:"message"`
-	CreatedAt string    `json:"created_at"`
 }
 
 type Client struct {
@@ -58,18 +37,21 @@ type Client struct {
 	send     chan []byte
 	hub      *Hub
 	latency  time.Time
-	mu       sync.RWMutex
+	userId   string
 	username string
 	avatar   string
+	roomId   string
 }
 
-func NewClient(conn *websocket.Conn, hub *Hub, username string, avatar string) *Client {
+func NewClient(conn *websocket.Conn, hub *Hub, user_id string, username string, avatar string) *Client {
 	return &Client{
 		conn:     conn,
 		hub:      hub,
-		send:     make(chan []byte),
+		send:     make(chan []byte, 256),
+		userId:   user_id,
 		username: username,
 		avatar:   avatar,
+		roomId:   "",
 	}
 }
 
@@ -80,59 +62,66 @@ func (c *Client) Run() {
 
 func (c *Client) fromWebsocketToHub() {
 	defer func() {
+		fmt.Println("unregister client")
 		c.hub.unregisterClient <- c
 	}()
 
-	// done := make(chan struct{})
 	c.conn.SetReadDeadline(time.Now().Add(pongTime))
 	c.conn.SetPongHandler(func(appData string) error {
-		// fmt.Println("received a pong from the client")
-		// latency_status := LatencyStatus(c.latency)
-		// latency := &DataRequest{
-		// 	EventType: Latency,
-		// 	// Message:   fmt.Sprintf("%.1fms", float32(time.Since(c.latency).Microseconds())/1000),
-		// 	Message: string(latency_status),
-		// }
 		c.conn.SetReadDeadline(time.Now().Add(pongTime)) // receiving a pong message from the client is resetting the read dead line
-		// c.conn.WriteJSON(latency)
 		return nil
 	})
 
 	for {
-		var data *DataRequest
+		var data *event.WebsocketMessage
 		// _, msg, err := c.conn.ReadMessage()
 		err := c.conn.ReadJSON(&data)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v\n", err)
 			}
-			fmt.Println(err)
 			break
 		}
 
-		switch data.EventType {
-		case Message:
-			// fmt.Println("data: ", data)
-			data_response := &DataResponse{
-				EventType: data.EventType,
-				Username:  c.username,
-				Avatar:    c.avatar,
-				Message:   data.Message,
-				CreatedAt: time.Now().Format("15:04"),
+		switch data.Event {
+		case event.Message:
+			if c.roomId != "" {
+				response := &event.WebsocketMessage{
+					Event: event.Message,
+					Payload: event.Payload{
+						UserId:   c.userId,
+						Username: c.username,
+						Avatar:   c.avatar,
+						RoomId:   c.roomId,
+						Message:  data.Payload.Message,
+					},
+					Timestamp: time.Now().UTC().Format("15:04:22"),
+				}
+				b, err := json.Marshal(response)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				fmt.Println(response)
+				room, ok := c.hub.roomRepository.GetRoom(c.roomId)
+				if ok {
+					room.broadcast <- b
+				}
 			}
-			b, err := json.Marshal(data_response)
-			if err != nil {
-				fmt.Println(err)
+		case event.JoinRoom:
+			room, ok := c.hub.roomRepository.GetRoom(data.Payload.RoomId)
+			if ok {
+				room.join <- c
 			}
-			fmt.Println(data_response)
-			// c.hub.broadcast <- b
-			c.hub.Broadcast(c, b)
-		case Join:
-			fmt.Println("user", c.username, "joined room: ", data.Message)
-		case Leave:
-			fmt.Println("user", c.username, "left room")
+
+		case event.LeaveRoom:
+			room, ok := c.hub.roomRepository.GetRoom(c.roomId)
+			if ok {
+				room.leave <- c
+			}
+
 		default:
-			panic("event_type not recognized")
+			log.Println("event not recognized")
 		}
 	}
 }
@@ -141,14 +130,13 @@ func (c *Client) fromHubToWebsocket() {
 	ticker := time.NewTicker(pingTime)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
 	}()
 	for {
 		select {
 		case msg, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeTime))
 			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 			w, err := c.conn.NextWriter(websocket.TextMessage)
@@ -158,12 +146,6 @@ func (c *Client) fromHubToWebsocket() {
 			}
 			w.Write(msg)
 
-			// n := len(c.send)
-			// for range n {
-			// 	w.Write([]byte("\n"))
-			// 	w.Write(<-c.send)
-			// }
-
 			if err := w.Close(); err != nil {
 				return
 			}
@@ -171,12 +153,8 @@ func (c *Client) fromHubToWebsocket() {
 			c.conn.SetWriteDeadline(time.Now().Add(writeTime)) // without setting a write deadline the server will not wait for the pong message from the client
 			err := c.conn.WriteMessage(websocket.PingMessage, nil)
 			if err != nil {
-				c.hub.unregisterClient <- c
 				return
 			}
-			// c.mu.Lock()
-			// c.latency = time.Now()
-			// c.mu.Unlock()
 		}
 	}
 }
@@ -196,19 +174,14 @@ func (c *Client) fromHubToWebsocket() {
 // 	}
 // }
 
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, user *User) {
+func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, user *entity.User) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	client := &Client{
-		conn:     conn,
-		send:     make(chan []byte, 256),
-		hub:      hub,
-		username: user.Username,
-		avatar:   "",
-	}
+	uid := uuid.New()
+	client := NewClient(conn, hub, uid.String(), user.Username, user.Avatar)
 	client.hub.registerClient <- client
 
 	client.Run()

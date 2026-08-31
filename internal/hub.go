@@ -4,20 +4,32 @@ import (
 	"fmt"
 )
 
+type MessageToBroadcast struct {
+	client  *Client
+	message []byte
+}
+
 type Hub struct {
 	clients          map[*Client]bool
+	roomRepository   RoomRepository
 	registerClient   chan *Client
 	unregisterClient chan *Client
-	broadcast        chan []byte
+	broadcast        chan MessageToBroadcast
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients:          make(map[*Client]bool),
+		roomRepository:   &RoomManager{},
 		registerClient:   make(chan *Client),
 		unregisterClient: make(chan *Client),
-		broadcast:        make(chan []byte),
+		broadcast:        make(chan MessageToBroadcast),
 	}
+}
+
+func (h *Hub) InitRoomRepository(rooms []string) RoomRepository {
+	h.roomRepository = NewRoomManager(rooms)
+	return h.roomRepository
 }
 
 func (h *Hub) Run() {
@@ -25,39 +37,28 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.registerClient:
-			fmt.Println("client connected")
 			h.clients[client] = true
-			fmt.Println("clients: ", len(h.clients))
+			fmt.Println(client.username, "connected")
+
 		case client := <-h.unregisterClient:
-			fmt.Println("client disconnected")
-			// h.clients[client] = false
+			room, ok := h.roomRepository.GetRoom(client.roomId)
+			if ok {
+				room.leave <- client
+			}
 			close(client.send)
 			client.conn.Close()
 			delete(h.clients, client)
-			fmt.Println("clients: ", len(h.clients))
-		case msg := <-h.broadcast:
+			fmt.Println("client disconnected", client.username)
+
+		case b := <-h.broadcast:
+			c := b.client
+			message := b.message
 			for client, ok := range h.clients {
 				if ok {
-					client.send <- msg
+					if client.conn != c.conn {
+						client.send <- message
+					}
 				}
-			}
-		}
-	}
-}
-
-func (h *Hub) RegisterClient(client *Client) {
-	h.registerClient <- client
-}
-
-func (h *Hub) UnregisterClient(client *Client) {
-	h.unregisterClient <- client
-}
-
-func (h *Hub) Broadcast(client *Client, b []byte) {
-	for c, ok := range h.clients {
-		if ok {
-			if c.conn != client.conn {
-				c.send <- b
 			}
 		}
 	}
