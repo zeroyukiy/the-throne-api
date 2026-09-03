@@ -60,6 +60,10 @@ func (c *Client) Run() {
 	go c.fromHubToWebsocket()
 }
 
+func (c *Client) GetUserId() string {
+	return c.userId
+}
+
 func (c *Client) fromWebsocketToHub() {
 	defer func() {
 		fmt.Println("unregister client")
@@ -112,6 +116,11 @@ func (c *Client) fromWebsocketToHub() {
 			room, ok := c.hub.roomRepository.GetRoom(data.Payload.RoomId)
 			if ok {
 				room.join <- c
+			} else {
+				if room = c.hub.roomRepository.CreateRoom(data.Payload.RoomId); room != nil {
+					fmt.Printf("room %s created\n", room.id)
+					room.join <- c
+				}
 			}
 
 		case event.LeaveRoom:

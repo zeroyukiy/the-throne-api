@@ -52,12 +52,12 @@ func (r *Room) Run() {
 		case client := <-r.join:
 			r.clients[client.userId] = client
 			client.roomId = r.id
-			fmt.Printf("%s joined the room\n", client.username)
+			fmt.Printf("%s joined the room %s\n", client.username, r.id)
 
 		case client := <-r.leave:
 			delete(r.clients, client.userId)
 			client.roomId = ""
-			fmt.Println(client.username, "left the room")
+			fmt.Printf("%s left the room %s\n", client.username, r.id)
 
 			fmt.Println(len(r.clients))
 
@@ -79,6 +79,11 @@ func (r *Room) Run() {
 					fmt.Println(err)
 				}
 				r.broadcast <- b
+			} else {
+				ok := r.roomRepository.RemoveRoom(r.id)
+				if ok {
+					fmt.Printf("room %s removed\n", r.id)
+				}
 			}
 		}
 	}
@@ -88,20 +93,8 @@ func (r *Room) GetRoomId() string {
 	return r.id
 }
 
-func (r *Room) GetClients() []string {
-	clients := []string{}
-	for _, c := range r.clients {
-		found := false
-		for _, f := range clients {
-			if f == c.username {
-				found = true
-			}
-		}
-		if !found {
-			clients = append(clients, c.username)
-		}
-	}
-	return clients
+func (r *Room) GetClients() map[string]*Client {
+	return r.clients
 }
 
 func (r *Room) GetStatus() string {
@@ -113,6 +106,24 @@ func (r *Room) GetStatus() string {
 	default:
 		return "unknown"
 	}
+}
+
+func (r *Room) GetUniqueUsers() int {
+	n := 0
+	whitelist := []string{}
+	for _, u := range r.clients {
+		found := false
+		for _, w := range whitelist {
+			if u.username == w {
+				found = true
+			}
+		}
+		if found == false {
+			n++
+			whitelist = append(whitelist, u.username)
+		}
+	}
+	return n
 }
 
 func (r *Room) UpdateRoom(id string) {

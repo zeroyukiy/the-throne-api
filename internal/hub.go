@@ -27,12 +27,12 @@ func NewHub() *Hub {
 	}
 }
 
-func (h *Hub) InitRoomRepository(rooms []string) RoomRepository {
-	h.roomRepository = NewRoomManager(rooms)
-	return h.roomRepository
+func (h *Hub) InitRoomManager() {
+	h.roomRepository = NewRoomManager()
 }
 
 func (h *Hub) Run() {
+	h.InitRoomManager()
 	fmt.Println("Hub is running.")
 	for {
 		select {
@@ -62,4 +62,8 @@ func (h *Hub) Run() {
 			}
 		}
 	}
+}
+
+func (h *Hub) GetRoomRepository() RoomRepository {
+	return h.roomRepository
 }

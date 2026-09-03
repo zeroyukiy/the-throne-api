@@ -14,8 +14,8 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
+	"github.com/zeroyukiy/the-throne-api/database"
 	"github.com/zeroyukiy/the-throne-api/database/entity"
 	"github.com/zeroyukiy/the-throne-api/database/repository"
 	"github.com/zeroyukiy/the-throne-api/internal"
@@ -69,15 +69,14 @@ func init() {
 
 func main() {
 	hub := internal.NewHub()
-	roomRepo := hub.InitRoomRepository([]string{"hello", "pippo", "chat"})
 	go hub.Run()
 
 	// DATABASE
-	// conn := database.Init()
-	// if err := conn.Ping(); err != nil {
-	// 	log.Fatal("database error connection: ", err)
-	// }
-	var conn *sqlx.DB = &sqlx.DB{}
+	conn := database.Init()
+	if err := conn.Ping(); err != nil {
+		log.Fatal("database error connection: ", err)
+	}
+	// var conn *sqlx.DB = &sqlx.DB{}
 
 	router := gin.Default()
 
@@ -113,21 +112,28 @@ func main() {
 
 	router.GET("/chat/list", func(c *gin.Context) {
 		type Room struct {
-			Id     string   `json:"room_id"`
-			Status string   `json:"status"`
-			Users  []string `json:"users"`
+			Id         string   `json:"room_id"`
+			Status     string   `json:"status"`
+			Users      []string `json:"clients"`
+			TotalUsers int      `json:"total_clients"`
+			Distinct   int      `json:"distinct"`
 		}
 		type Result struct {
 			Rooms []Room `json:"rooms"`
 		}
 		res := Result{}
-		list := roomRepo.ListRooms()
+		list := hub.GetRoomRepository().ListRooms()
 		for _, r := range list {
-			res.Rooms = append(res.Rooms, Room{
+			room := Room{
 				Id:     r.GetRoomId(),
 				Status: r.GetStatus(),
-				Users:  r.GetClients(),
-			})
+			}
+			for _, client := range r.GetClients() {
+				room.Users = append(room.Users, client.GetUserId())
+			}
+			room.TotalUsers = len(room.Users)
+			room.Distinct = r.GetUniqueUsers()
+			res.Rooms = append(res.Rooms, room)
 		}
 		sort.Slice(res.Rooms, func(i, j int) bool {
 			if res.Rooms[i].Id < res.Rooms[j].Id {
@@ -139,31 +145,16 @@ func main() {
 		c.JSON(http.StatusOK, res)
 	})
 
-	router.GET("/chat/:room_id/update", func(c *gin.Context) {
-		room_id := c.Param("room_id")
-		room, ok := roomRepo.GetRoom(room_id)
-		if ok {
-			room.UpdateRoom("spaccatore")
-		}
-		c.JSON(http.StatusOK, nil)
-	})
-
-	router.GET("/chat/:room_id", func(c *gin.Context) {
+	router.GET("/chat/example", func(c *gin.Context) {
 		type Result struct {
 			RoomId  string   `json:"room_id"`
 			Clients []string `json:"clients"`
 		}
-		room_id := c.Param("room_id")
-		room, ok := roomRepo.GetRoom(room_id)
-		if ok {
-			res := Result{
-				RoomId:  room.GetRoomId(),
-				Clients: room.GetClients(),
-			}
-			c.JSON(http.StatusOK, res)
-			return
+		res := Result{
+			RoomId:  "example",
+			Clients: nil,
 		}
-		c.JSON(http.StatusNotFound, nil)
+		c.JSON(http.StatusOK, res)
 	})
 
 	router.POST("/login", func(c *gin.Context) {
