@@ -10,6 +10,7 @@ import (
 type UserRepository interface {
 	Get(username string, password string) (*entity.User, error)
 	GetCards(user_id int) ([]*entity.Card, error)
+	FindOne(username string) (*entity.User, error)
 }
 
 type userRepository struct {
@@ -25,8 +26,21 @@ func NewUserRepository(conn *sqlx.DB) UserRepository {
 func (r *userRepository) Get(username string, password string) (*entity.User, error) {
 	user := &entity.User{}
 
-	query := `SELECT id, username, avatar, created_at FROM users WHERE username = ? AND password = ?`
+	query := `SELECT id, username, avatar, created_at FROM users_test WHERE username = $1 AND password = $2`
 	err := r.conn.Get(user, query, username, password)
+	if err != nil {
+		log.Println("select error: ", err)
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func (r *userRepository) FindOne(username string) (*entity.User, error) {
+	user := &entity.User{}
+
+	query := `SELECT id, username, avatar, created_at FROM users_test WHERE username = $1`
+	err := r.conn.Get(user, query, username)
 	if err != nil {
 		log.Println("select error: ", err)
 		return nil, err
@@ -41,7 +55,7 @@ func (r *userRepository) GetCards(user_id int) ([]*entity.Card, error) {
 	query := `SELECT c.id, c.name FROM card_user as cu
 		JOIN cards as c on c.id = cu.card_id
 		JOIN users as u on u.id = cu.user_id
-		WHERE u.id = ?`
+		WHERE u.id = $1`
 	rows, err := r.conn.Queryx(query, user_id)
 	if err != nil {
 		return nil, err

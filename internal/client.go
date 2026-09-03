@@ -66,7 +66,7 @@ func (c *Client) GetUserId() string {
 
 func (c *Client) fromWebsocketToHub() {
 	defer func() {
-		fmt.Println("unregister client")
+		fmt.Println("unregistering client..")
 		c.hub.unregisterClient <- c
 	}()
 
@@ -81,7 +81,7 @@ func (c *Client) fromWebsocketToHub() {
 		// _, msg, err := c.conn.ReadMessage()
 		err := c.conn.ReadJSON(&data)
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v\n", err)
 			}
 			break

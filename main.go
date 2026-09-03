@@ -19,6 +19,7 @@ import (
 	"github.com/zeroyukiy/the-throne-api/database/entity"
 	"github.com/zeroyukiy/the-throne-api/database/repository"
 	"github.com/zeroyukiy/the-throne-api/internal"
+	"github.com/zeroyukiy/the-throne-api/internal/handler"
 )
 
 type LoginForm struct {
@@ -110,7 +111,14 @@ func main() {
 
 	router.Static("/assets", "./public")
 
-	router.GET("/chat/list", func(c *gin.Context) {
+	{
+		chatRouter := router.Group("/chat")
+		chathandler := handler.NewChatHandler(conn)
+		chatRouter.GET("/all", chathandler.Index)
+		chatRouter.GET("/:slug", chathandler.Show)
+	}
+
+	router.GET("/ws/chat/list", func(c *gin.Context) {
 		type Room struct {
 			Id         string   `json:"room_id"`
 			Status     string   `json:"status"`
@@ -121,7 +129,9 @@ func main() {
 		type Result struct {
 			Rooms []Room `json:"rooms"`
 		}
-		res := Result{}
+		res := Result{
+			Rooms: []Room{},
+		}
 		list := hub.GetRoomRepository().ListRooms()
 		for _, r := range list {
 			room := Room{
@@ -145,17 +155,17 @@ func main() {
 		c.JSON(http.StatusOK, res)
 	})
 
-	router.GET("/chat/example", func(c *gin.Context) {
-		type Result struct {
-			RoomId  string   `json:"room_id"`
-			Clients []string `json:"clients"`
-		}
-		res := Result{
-			RoomId:  "example",
-			Clients: nil,
-		}
-		c.JSON(http.StatusOK, res)
-	})
+	// router.GET("/chat/example", func(c *gin.Context) {
+	// 	type Result struct {
+	// 		RoomId  string   `json:"room_id"`
+	// 		Clients []string `json:"clients"`
+	// 	}
+	// 	res := Result{
+	// 		RoomId:  "example",
+	// 		Clients: nil,
+	// 	}
+	// 	c.JSON(http.StatusOK, res)
+	// })
 
 	router.POST("/login", func(c *gin.Context) {
 		var login LoginForm
@@ -164,20 +174,22 @@ func main() {
 			return
 		}
 
-		// userRepo := repository.NewUserRepository(conn)
-		// user, err := userRepo.Get(login.Username, login.Password)
-		// if err != nil {
-		// 	c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		// 	return
-		// }
+		userRepo := repository.NewUserRepository(conn)
+		user, err := userRepo.Get(login.Username, login.Password)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
 
 		uid := uuid.New()
+		user.Id = uid.String()
+		user.Avatar = fmt.Sprintf("http://localhost:8000/assets/avatars/%s", user.Avatar)
 
-		user := entity.User{
-			Id:       uid.String(),
-			Username: login.Username,
-			Avatar:   "http://localhost:8000/assets/avatars/pippo.jpg",
-		}
+		// user := entity.User{
+		// 	Id:       uid.String(),
+		// 	Username: login.Username,
+		// 	Avatar:   "http://localhost:8000/assets/avatars/pippo.jpg",
+		// }
 
 		b, err := json.Marshal(user)
 		if err != nil {
