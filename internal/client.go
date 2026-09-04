@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/zeroyukiy/the-throne-api/database/entity"
 	"github.com/zeroyukiy/the-throne-api/internal/event"
@@ -189,8 +188,9 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, user *entity.User
 		fmt.Println(err)
 		return
 	}
-	uid := uuid.New()
-	client := NewClient(conn, hub, uid.String(), user.Username, user.Avatar)
+	// uid := uuid.New()
+	// client := NewClient(conn, hub, uid.String(), user.Username, user.Avatar)
+	client := NewClient(conn, hub, user.Id, user.Username, user.Avatar)
 	client.hub.registerClient <- client
 
 	client.Run()

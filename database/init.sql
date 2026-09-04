@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS users_test(
+CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
     username VARCHAR(20) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS users_test(
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- INSERT INTO users_test (username, email, password, avatar) VALUES ('pippo', 'pippo@p.p', 'abcd', 'avatar_deity_man_02.png');
--- INSERT INTO users_test (username, email, password) VALUES ('pluto', 'pluto@p.p', 'abcd', 'avatar_warrior_halfork_woman_01.png');
+-- INSERT INTO users (username, email, password, avatar) VALUES ('pippo', 'pippo@p.p', 'abcd', 'avatar_deity_man_02.png');
+-- INSERT INTO users (username, email, password, avatar) VALUES ('pluto', 'pluto@p.p', 'abcd', 'avatar_warrior_halfork_woman_01.png');
 
 CREATE TABLE IF NOT EXISTS chats(
     id SERIAL PRIMARY KEY,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS chats(
 CREATE TABLE IF NOT EXISTS messages(
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
-    text_ TEXT NOT NULL,
+    text TEXT NOT NULL,
     chat_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),

@@ -26,7 +26,7 @@ func NewUserRepository(conn *sqlx.DB) UserRepository {
 func (r *userRepository) Get(username string, password string) (*entity.User, error) {
 	user := &entity.User{}
 
-	query := `SELECT id, username, avatar, created_at FROM users_test WHERE username = $1 AND password = $2`
+	query := `SELECT id, username, avatar, created_at FROM users WHERE username = $1 AND password = $2`
 	err := r.conn.Get(user, query, username, password)
 	if err != nil {
 		log.Println("select error: ", err)
@@ -36,11 +36,11 @@ func (r *userRepository) Get(username string, password string) (*entity.User, er
 	return user, nil
 }
 
-func (r *userRepository) FindOne(username string) (*entity.User, error) {
+func (r *userRepository) FindOne(id string) (*entity.User, error) {
 	user := &entity.User{}
 
-	query := `SELECT id, username, avatar, created_at FROM users_test WHERE username = $1`
-	err := r.conn.Get(user, query, username)
+	query := `SELECT id, username, avatar, created_at FROM users WHERE id = $1`
+	err := r.conn.Get(user, query, id)
 	if err != nil {
 		log.Println("select error: ", err)
 		return nil, err

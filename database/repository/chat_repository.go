@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/jmoiron/sqlx"
@@ -11,7 +10,7 @@ import (
 
 type ChatRepository interface {
 	SelectAll(context.Context) ([]*entity.Chat, error)
-	GetBySlug(context.Context, string) (*entity.Chat, error)
+	GetBySlug(context.Context, string) (*entity.ChatPlusUserPlusMessages, error)
 }
 
 type chatRepository struct {
@@ -35,18 +34,44 @@ func (r *chatRepository) SelectAll(ctx context.Context) ([]*entity.Chat, error) 
 	return chats, nil
 }
 
-func (r *chatRepository) GetBySlug(ctx context.Context, slug string) (*entity.Chat, error) {
-	chat := &entity.Chat{}
-
-	// query := `SELECT * FROM chats LEFT JOIN messages ON chats.id = messages.chat_id WHERE slug = $1`
-	query := `SELECT * FROM chats WHERE slug = $1`
+func (r *chatRepository) GetBySlug(ctx context.Context, slug string) (*entity.ChatPlusUserPlusMessages, error) {
+	chat := &entity.ChatPlusUserPlusMessages{
+		Messages: []*entity.CustomMessage{},
+	}
+	query := `SELECT
+	c.id,
+	c.name,
+	c.slug,
+	c.location,
+	c.description,
+	c.is_open,
+	u.id as "user.id",
+	u.username as "user.username",
+	u.avatar as "user.avatar",
+	u.created_at as "user.created_at",
+	c.created_at,
+	c.updated_at
+	FROM chats as c
+	LEFT JOIN users as u ON c.user_id = u.id
+	WHERE slug = $1`
 	err := r.conn.GetContext(ctx, chat, query, slug)
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	}
 
-	query2 := `SELECT * FROM messages WHERE chat_id = $1`
+	query2 := `SELECT
+	m.id,
+	m.text,
+	m.created_at,
+	m.updated_at,
+	u.id as "user.id",
+	u.username as "user.username",
+	u.avatar as "user.avatar",
+	u.created_at as "user.created_at"
+	FROM messages as m
+	LEFT JOIN users as u ON m.user_id = u.id
+	WHERE chat_id = $1`
 	rows, err := r.conn.QueryxContext(ctx, query2, chat.Id)
 	if err != nil {
 		log.Println(err)
@@ -54,10 +79,10 @@ func (r *chatRepository) GetBySlug(ctx context.Context, slug string) (*entity.Ch
 	}
 
 	for rows.Next() {
-		message := &entity.Message{}
+		message := &entity.CustomMessage{}
 		err = rows.StructScan(message)
 		if err != nil {
-			fmt.Println(err)
+			log.Fatal(err)
 		}
 		chat.Messages = append(chat.Messages, message)
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/zeroyukiy/the-throne-api/database"
 	"github.com/zeroyukiy/the-throne-api/database/entity"
@@ -118,6 +117,22 @@ func main() {
 		chatRouter.GET("/:slug", chathandler.Show)
 	}
 
+	{
+		userRouter := router.Group("/users")
+		userRouter.GET("/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			userRepo := repository.NewUserRepository(conn)
+			user, err := userRepo.FindOne(id)
+			if err != nil {
+				fmt.Println(err)
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"user_id":  user.Id,
+				"username": user.Username,
+			})
+		})
+	}
+
 	router.GET("/ws/chat/list", func(c *gin.Context) {
 		type Room struct {
 			Id         string   `json:"room_id"`
@@ -181,9 +196,9 @@ func main() {
 			return
 		}
 
-		uid := uuid.New()
-		user.Id = uid.String()
-		user.Avatar = fmt.Sprintf("http://localhost:8000/assets/avatars/%s", user.Avatar)
+		// uid := uuid.New()
+		// user.Id = uid.String()
+		// user.Avatar = fmt.Sprintf("http://localhost:8000/assets/avatars/%s", user.Avatar)
 
 		// user := entity.User{
 		// 	Id:       uid.String(),
