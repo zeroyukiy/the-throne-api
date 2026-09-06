@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/zeroyukiy/the-throne-api/database/entity"
+	"github.com/zeroyukiy/the-throne-api/database/model"
 	"github.com/zeroyukiy/the-throne-api/internal/event"
 )
 
@@ -182,7 +182,7 @@ func (c *Client) fromHubToWebsocket() {
 // 	}
 // }
 
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, user *entity.User) {
+func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, user *model.User) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println(err)

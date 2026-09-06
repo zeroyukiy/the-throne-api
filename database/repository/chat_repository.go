@@ -5,12 +5,13 @@ import (
 	"log"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/zeroyukiy/the-throne-api/database/entity"
+	"github.com/zeroyukiy/the-throne-api/database/model"
+	"github.com/zeroyukiy/the-throne-api/database/viewmodel"
 )
 
 type ChatRepository interface {
-	SelectAll(context.Context) ([]*entity.Chat, error)
-	GetBySlug(context.Context, string) (*entity.ChatPlusUserPlusMessages, error)
+	SelectAll(context.Context) ([]*model.Chat, error)
+	GetBySlug(context.Context, string) (*viewmodel.ChatAndUser, error)
 }
 
 type chatRepository struct {
@@ -23,8 +24,8 @@ func NewChatRepository(conn *sqlx.DB) ChatRepository {
 	}
 }
 
-func (r *chatRepository) SelectAll(ctx context.Context) ([]*entity.Chat, error) {
-	chats := []*entity.Chat{}
+func (r *chatRepository) SelectAll(ctx context.Context) ([]*model.Chat, error) {
+	chats := []*model.Chat{}
 
 	query := `SELECT * FROM chats LIMIT 10`
 	if err := r.conn.SelectContext(ctx, &chats, query); err != nil {
@@ -34,10 +35,8 @@ func (r *chatRepository) SelectAll(ctx context.Context) ([]*entity.Chat, error) 
 	return chats, nil
 }
 
-func (r *chatRepository) GetBySlug(ctx context.Context, slug string) (*entity.ChatPlusUserPlusMessages, error) {
-	chat := &entity.ChatPlusUserPlusMessages{
-		Messages: []*entity.CustomMessage{},
-	}
+func (r *chatRepository) GetBySlug(ctx context.Context, slug string) (*viewmodel.ChatAndUser, error) {
+	chat := &viewmodel.ChatAndUser{}
 	query := `SELECT
 	c.id,
 	c.name,
@@ -54,37 +53,17 @@ func (r *chatRepository) GetBySlug(ctx context.Context, slug string) (*entity.Ch
 	FROM chats as c
 	LEFT JOIN users as u ON c.user_id = u.id
 	WHERE slug = $1`
-	err := r.conn.GetContext(ctx, chat, query, slug)
+	row := r.conn.QueryRowContext(ctx, query, slug)
+	// err := r.conn.GetContext(ctx, chat, query, slug)
+	if row.Err() != nil {
+		log.Println(row.Err())
+		return nil, row.Err()
+	}
+
+	err := row.Scan(&chat.Id, &chat.Name, &chat.Slug, &chat.Location, &chat.Description, &chat.Open, &chat.User.Id, &chat.User.Username, &chat.User.Avatar, &chat.User.CreatedAt, &chat.CreatedAt, &chat.UpdatedAt)
 	if err != nil {
 		log.Println(err)
 		return nil, err
-	}
-
-	query2 := `SELECT
-	m.id,
-	m.text,
-	m.created_at,
-	m.updated_at,
-	u.id as "user.id",
-	u.username as "user.username",
-	u.avatar as "user.avatar",
-	u.created_at as "user.created_at"
-	FROM messages as m
-	LEFT JOIN users as u ON m.user_id = u.id
-	WHERE chat_id = $1`
-	rows, err := r.conn.QueryxContext(ctx, query2, chat.Id)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-
-	for rows.Next() {
-		message := &entity.CustomMessage{}
-		err = rows.StructScan(message)
-		if err != nil {
-			log.Fatal(err)
-		}
-		chat.Messages = append(chat.Messages, message)
 	}
 
 	return chat, nil

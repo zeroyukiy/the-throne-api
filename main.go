@@ -15,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/zeroyukiy/the-throne-api/database"
-	"github.com/zeroyukiy/the-throne-api/database/entity"
+	"github.com/zeroyukiy/the-throne-api/database/model"
 	"github.com/zeroyukiy/the-throne-api/database/repository"
 	"github.com/zeroyukiy/the-throne-api/internal"
 	"github.com/zeroyukiy/the-throne-api/internal/handler"
@@ -76,9 +76,12 @@ func main() {
 	if err := conn.Ping(); err != nil {
 		log.Fatal("database error connection: ", err)
 	}
-	// var conn *sqlx.DB = &sqlx.DB{}
+	defer conn.Close()
 
 	router := gin.Default()
+	// loggerConfig := gin.LoggerConfig{SkipPaths: []string{"/chat/example"}}
+	// router := gin.New()
+	// router.Use(gin.LoggerWithConfig(loggerConfig))
 
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
@@ -200,7 +203,7 @@ func main() {
 		// user.Id = uid.String()
 		// user.Avatar = fmt.Sprintf("http://localhost:8000/assets/avatars/%s", user.Avatar)
 
-		// user := entity.User{
+		// user := model.User{
 		// 	Id:       uid.String(),
 		// 	Username: login.Username,
 		// 	Avatar:   "http://localhost:8000/assets/avatars/pippo.jpg",
@@ -224,7 +227,7 @@ func main() {
 	})
 
 	router.GET("/@me", func(c *gin.Context) {
-		var user *entity.User
+		var user *model.User
 		session := sessions.Default(c)
 		//
 
@@ -269,9 +272,9 @@ func main() {
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
-		var user *entity.User
+		var user *model.User
 
-		// user = &entity.User{
+		// user = &model.User{
 		// 	Username: "pippo",
 		// 	Id:       "123",
 		// 	Avatar:   "http://localhost:8000/assets/avatars/pippo.jpg",
@@ -291,5 +294,5 @@ func main() {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
 	})
 
-	router.Run("localhost:8000")
+	router.Run("127.0.0.1:8000")
 }

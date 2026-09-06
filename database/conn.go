@@ -2,9 +2,9 @@ package database
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -16,16 +16,19 @@ func Init() *sqlx.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
+	conn.SetMaxOpenConns(100)
+	conn.SetMaxIdleConns(100)
+	conn.SetConnMaxLifetime(5 * time.Minute)
 
-	f, err := os.Open("./database/init.sql")
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	b, err := io.ReadAll(f)
-	schema := string(b)
+	// f, err := os.Open("./database/init.sql")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer f.Close()
+	// b, err := io.ReadAll(f)
+	// schema := string(b)
 
-	conn.MustExec(schema)
+	// conn.MustExec(schema)
 
 	return conn
 }

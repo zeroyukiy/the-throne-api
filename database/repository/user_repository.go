@@ -4,13 +4,13 @@ import (
 	"log"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/zeroyukiy/the-throne-api/database/entity"
+	"github.com/zeroyukiy/the-throne-api/database/model"
 )
 
 type UserRepository interface {
-	Get(username string, password string) (*entity.User, error)
-	GetCards(user_id int) ([]*entity.Card, error)
-	FindOne(username string) (*entity.User, error)
+	Get(username string, password string) (*model.User, error)
+	GetCards(user_id int) ([]*model.Card, error)
+	FindOne(username string) (*model.User, error)
 }
 
 type userRepository struct {
@@ -23,8 +23,8 @@ func NewUserRepository(conn *sqlx.DB) UserRepository {
 	}
 }
 
-func (r *userRepository) Get(username string, password string) (*entity.User, error) {
-	user := &entity.User{}
+func (r *userRepository) Get(username string, password string) (*model.User, error) {
+	user := &model.User{}
 
 	query := `SELECT id, username, avatar, created_at FROM users WHERE username = $1 AND password = $2`
 	err := r.conn.Get(user, query, username, password)
@@ -36,8 +36,8 @@ func (r *userRepository) Get(username string, password string) (*entity.User, er
 	return user, nil
 }
 
-func (r *userRepository) FindOne(id string) (*entity.User, error) {
-	user := &entity.User{}
+func (r *userRepository) FindOne(id string) (*model.User, error) {
+	user := &model.User{}
 
 	query := `SELECT id, username, avatar, created_at FROM users WHERE id = $1`
 	err := r.conn.Get(user, query, id)
@@ -49,8 +49,8 @@ func (r *userRepository) FindOne(id string) (*entity.User, error) {
 	return user, nil
 }
 
-func (r *userRepository) GetCards(user_id int) ([]*entity.Card, error) {
-	cards := []*entity.Card{}
+func (r *userRepository) GetCards(user_id int) ([]*model.Card, error) {
+	cards := []*model.Card{}
 
 	query := `SELECT c.id, c.name FROM card_user as cu
 		JOIN cards as c on c.id = cu.card_id
@@ -61,7 +61,7 @@ func (r *userRepository) GetCards(user_id int) ([]*entity.Card, error) {
 		return nil, err
 	}
 	for rows.Next() {
-		card := &entity.Card{}
+		card := &model.Card{}
 		err := rows.StructScan(card)
 		if err != nil {
 			return nil, err
